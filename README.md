@@ -6,6 +6,9 @@ Någon klistrar in en länk till ett repo i Discord. Några minuter senare finns
 inlägg i serverns projektforum med namn, beskrivning, länkar, språk och taggar.
 Ingen behöver fylla i något för hand, och ingen server behöver vara igång dygnet runt.
 
+Varje måndag postar den också en **veckosammanfattning**: nya projekt, vad som
+kodats på GitHub, var det diskuterats mest och vilka projekt som står still.
+
 Byggd för [AI Gruppen](#om-ai-gruppen), en Discord-server där vänner bygger saker
 tillsammans med AI (”vibe coding”), men går att använda på vilken server som helst.
 
@@ -88,6 +91,36 @@ Taggarna måste finnas i forumet med exakt de namnen. Taggar som saknas hoppas �
 | Arkiverade repon (som ✅ Klart) | Forks, vid länk till en användare |
 | | Repon som redan har ett inlägg |
 
+## Veckosammanfattning
+
+`weekly_summary.py` körs måndagar kl. 06:00 UTC och postar i en egen kanal (t.ex. `#veckan`):
+
+> # 📰 Veckan som gick, vecka 42
+> *10 okt – 17 okt*
+> ## 🔨 Kodat på GitHub
+> • kompis/recept-ai: **12 commits**
+>   › Lägg till inköpslista<br>
+>   › Fixa mörkt läge<br>
+>   › Uppdatera README
+> ## 💬 Livligast i trådarna
+> • kompis/recept-ai: 9 meddelanden från 3 personer
+> ## 💤 Står still
+> • kompis/gammalt-spel: senast pushat för 34 dagar sedan
+
+*(Påhittat exempel.)*
+
+| Avsnitt | Hur det räknas |
+|---|---|
+| 🆕 Nya projekt | Forum-inlägg skapade senaste 7 dagarna |
+| 🔨 Kodat på GitHub | Commits senaste 7 dagarna, med de tre senaste commit-rubrikerna |
+| 💬 Livligast i trådarna | Meddelanden från människor (inte botar) i projekttrådarna |
+| 💤 Står still | Inte pushat på 30+ dagar och inte taggat ✅ Klart |
+
+Privata repon syns inte för GitHub-API:t och räknas därför inte i commits. De nämns
+i en fotnot. Avsnitt utan innehåll hoppas över. Ingen AI används, bara räkning.
+
+Testa utan att posta: `python3 weekly_summary.py --dry-run`
+
 ---
 
 ## Kör den på din egen server
@@ -111,13 +144,15 @@ Du behöver: en Discord-server där du är admin, ett GitHub-konto och ~15 minut
    från [tabellen ovan](#taggar) (de du vill ha).
 3. Slå på **Utvecklarläge** (Användarinställningar → Avancerat). Högerklicka sedan
    på servern och de två kanalerna → **Kopiera ID**.
+4. Vill du ha veckosammanfattningen: skapa en textkanal för den, t.ex. `#veckan`, och kopiera dess ID också.
 
 ### 3. Sätt upp GitHub
 
 1. **Forka** det här repot (eller kopiera filerna till ett eget **publikt** repo).
 2. I ditt repo: **Settings → Secrets and variables → Actions**
    - Fliken **Secrets** → `DISCORD_TOKEN` = bot-token från steg 1.
-   - Fliken **Variables** → `GUILD_ID`, `INBOX_CHANNEL_ID`, `FORUM_CHANNEL_ID` = ID:na från steg 2.
+   - Fliken **Variables** → `GUILD_ID`, `INBOX_CHANNEL_ID`, `FORUM_CHANNEL_ID`
+     (och `SUMMARY_CHANNEL_ID` för veckosammanfattningen) = ID:na från steg 2.
 3. Fliken **Actions** → aktivera workflows → **Lägg in repon från Discord** → **Run workflow**.
 
 Klart! Klistra in en länk i din kanal och vänta.
@@ -130,6 +165,7 @@ Klart! Klistra in en länk i din kanal och vänta.
 | `GUILD_ID` | variable | Serverns ID |
 | `INBOX_CHANNEL_ID` | variable | Kanalen där länkar klistras in |
 | `FORUM_CHANNEL_ID` | variable | Forumet där inläggen skapas |
+| `SUMMARY_CHANNEL_ID` | variable | Kanalen där veckosammanfattningen postas |
 | `MAX_PER_USER_LINK` | variable | Max antal repon per användarlänk (standard 15) |
 
 Utan variablerna används AI Gruppens ID:n, vilket bara fungerar för den servern.
@@ -162,8 +198,10 @@ Inlägget skapas av boten, så medlemmar kan inte redigera första meddelandet e
 taggarna (bara moderatorer kan). Skriv uppdateringar som svar i tråden i stället.
 
 **Läser boten allt i servern?**
-Nej. Den läser bara de 50 senaste meddelandena i *en* kanal (länkkanalen) och
-skriver bara där och i forumet.
+Nej. Repo-synken läser bara de 50 senaste meddelandena i länkkanalen.
+Veckosammanfattningen läser projekttrådarna i forumet för att räkna meddelanden,
+men sparar eller citerar inget innehåll. Boten skriver bara i länkkanalen, forumet
+och sammanfattningskanalen.
 
 ---
 
@@ -171,8 +209,10 @@ skriver bara där och i forumet.
 
 | Fil | Vad |
 |---|---|
-| [`repo_sync.py`](repo_sync.py) | Hela logiken, ~220 rader Python utan beroenden |
-| [`.github/workflows/repo-sync.yml`](.github/workflows/repo-sync.yml) | Schemat som kör skriptet var 10:e minut |
+| [`repo_sync.py`](repo_sync.py) | Lägger in repon från länkkanalen, ~220 rader Python utan beroenden |
+| [`weekly_summary.py`](weekly_summary.py) | Veckosammanfattningen, använder hjälpfunktionerna i `repo_sync.py` |
+| [`.github/workflows/repo-sync.yml`](.github/workflows/repo-sync.yml) | Kör repo-synken var 10:e minut |
+| [`.github/workflows/weekly-summary.yml`](.github/workflows/weekly-summary.yml) | Kör sammanfattningen måndagar 06:00 UTC |
 
 ## Om AI Gruppen
 
