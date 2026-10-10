@@ -1,0 +1,22 @@
+name: Veckosammanfattning
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # måndagar 06:00 UTC (08:00 sommartid, 07:00 vintertid)
+  workflow_dispatch:
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 weekly_summary.py
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GUILD_ID: ${{ vars.GUILD_ID }}
+          FORUM_CHANNEL_ID: ${{ vars.FORUM_CHANNEL_ID }}
+          SUMMARY_CHANNEL_ID: ${{ vars.SUMMARY_CHANNEL_ID }}
