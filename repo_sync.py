@@ -22,7 +22,7 @@ import urllib.request
 # Standardvärden = AI Gruppen. Sätt egna via miljövariabler för din server.
 GUILD = os.environ.get('GUILD_ID') or '1558416177175470122'
 INBOX = os.environ.get('INBOX_CHANNEL_ID') or '1558428805608116313'   # #lägg-till-repo
-FORUM = os.environ.get('FORUM_CHANNEL_ID') or '1558422213080784993'   # #projekt
+FORUM = os.environ.get('FORUM_CHANNEL_ID') or '1558439433861075015'   # #projekt-intern
 MAX_PER_USER_LINK = int(os.environ.get('MAX_PER_USER_LINK') or 15)
 DONE, FAIL = '✅', '⚠️'
 
