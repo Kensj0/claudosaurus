@@ -7,7 +7,8 @@ Läser nya meddelanden i #lägg-till-repo. För varje GitHub-länk:
 Redan inlagda repon (samma ägare/repo i titeln) hoppas över.
 Behandlade meddelanden får en reaktion (✅/⚠️) och ett svar.
 
-Miljövariabler: DISCORD_TOKEN (krävs), GITHUB_TOKEN (valfri, högre rate limit).
+Miljövariabler: DISCORD_TOKEN (krävs), GITHUB_TOKEN (valfri, högre rate limit),
+GUILD_ID, INBOX_CHANNEL_ID, FORUM_CHANNEL_ID, MAX_PER_USER_LINK (valfria, se README).
 """
 import json
 import os
@@ -18,10 +19,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-GUILD = '1558416177175470122'
-INBOX = '1558428805608116313'   # #lägg-till-repo
-FORUM = '1558422213080784993'   # #projekt
-MAX_PER_USER_LINK = 15
+# Standardvärden = AI Gruppen. Sätt egna via miljövariabler för din server.
+GUILD = os.environ.get('GUILD_ID') or '1558416177175470122'
+INBOX = os.environ.get('INBOX_CHANNEL_ID') or '1558428805608116313'   # #lägg-till-repo
+FORUM = os.environ.get('FORUM_CHANNEL_ID') or '1558422213080784993'   # #projekt
+MAX_PER_USER_LINK = int(os.environ.get('MAX_PER_USER_LINK') or 15)
 DONE, FAIL = '✅', '⚠️'
 
 DISCORD = 'https://discord.com/api/v10'

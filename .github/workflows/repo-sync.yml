@@ -21,3 +21,7 @@ jobs:
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          GUILD_ID: ${{ vars.GUILD_ID }}
+          INBOX_CHANNEL_ID: ${{ vars.INBOX_CHANNEL_ID }}
+          FORUM_CHANNEL_ID: ${{ vars.FORUM_CHANNEL_ID }}
+          MAX_PER_USER_LINK: ${{ vars.MAX_PER_USER_LINK }}
