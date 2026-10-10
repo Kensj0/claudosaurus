@@ -171,7 +171,7 @@ skriver bara där och i forumet.
 
 | Fil | Vad |
 |---|---|
-| [`repo_sync.py`](repo_sync.py) | Hela logiken, ~270 rader Python utan beroenden |
+| [`repo_sync.py`](repo_sync.py) | Hela logiken, ~220 rader Python utan beroenden |
 | [`.github/workflows/repo-sync.yml`](.github/workflows/repo-sync.yml) | Schemat som kör skriptet var 10:e minut |
 
 ## Om AI Gruppen
