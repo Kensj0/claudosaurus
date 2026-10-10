@@ -179,3 +179,7 @@ skriver bara där och i forumet.
 En liten Discord-server där vänner bygger appar och verktyg tillsammans med hjälp av
 AI-assistenter som Claude Code och ChatGPT. Claudosaurus håller ordning på
 projekten. Namnet är en blandning av *Claude* och *dinosaurus*. 🦖
+
+## Licens
+
+[MIT](LICENSE): fritt att använda, ändra och dela, så länge licenstexten följer med.
