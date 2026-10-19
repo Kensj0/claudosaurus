@@ -1,39 +1,29 @@
 #!/usr/bin/env python3
-"""Claudosaurus: weekly report for Jarri Workspace.
+"""Claudosaurus: weekly report for one group in AI-Den (ai or jarri).
 
-Posts once a week in #claudosaurus: what happened in the Jarri repos (commits and
-changed docs) and in the Discord server (messages), last 7 days. If ANTHROPIC_API_KEY
-is set, a short summary is written from that material. Only the repos in REPOS are
-read. Archived channels and #jarri-core are skipped, so nothing from other projects is included.
+Posts in the group's #weekly-report: commits and changed docs in the repos listed in the
+group's #repos, Discord activity in the group's chat channels, notes people wrote in the
+group's #claudosaurus, and a short AI summary if ANTHROPIC_API_KEY is set.
 
-  python3 weekly_summary.py            # posts to #claudosaurus
-  python3 weekly_summary.py --dry-run  # prints the text only
-
-Environment variables (optional, see README): SUMMARY_CHANNEL_ID, GITHUB_TOKEN,
-DISCORD_TOKEN, ANTHROPIC_API_KEY.
+  python3 weekly_summary.py --group jarri            # posts
+  python3 weekly_summary.py --group ai --dry-run     # prints the text only
 """
+import base64
 import datetime as dt
 import os
+import re
 import sys
 
+from config import GROUPS, JARRI_CORE
+from directory_sync import LINK, entries
 from repo_sync import GUILD, discord, github, http
 
-SUMMARY = os.environ.get('SUMMARY_CHANNEL_ID') or '1561799044194631680'  # #claudosaurus
-ARCHIVE = '1561799036967718973'  # 📦 ARCHIVE, skipped completely
-JARRI_CORE = '1561803926867804225'  # #jarri-core, Core Group only, never reported
-REPOS = [
-    'TorMatzAndren/jarri-workspace-core',
-    'Kensj0/jarri-workspace-core',
-    'Kensj0/jarri-apps',   # private: not visible to the bot until made public or given a token
-    'Kensj0/kennystuner',  # the tuner module
-    'Kensj0/claudosaurus',
-]
-TEXT_TYPES = (0, 5, 15)  # text, announcement, forum
 DAYS = 7
 MAX_CHARS = 20000  # cap on text sent to the summary model
 MODEL = 'claude-sonnet-5-5'
 DISCORD_EPOCH = 1420070400000
 MONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split()
+DRY = '--dry-run' in sys.argv
 
 
 def fmt(t):
@@ -44,17 +34,23 @@ def time_snowflake(t):
     return str(int(t.timestamp() * 1000 - DISCORD_EPOCH) << 22)
 
 
-def commits_since(full_name, since):
-    """Commit shas and titles since the given time, empty if the repo can't be read."""
-    status, data = github(f"/repos/{full_name}/commits?per_page=100&since={since.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+def repos_in(group):
+    """Full repo names listed in the group's #repos. The Jarri list is the Jarri repos."""
+    out = []
+    for login, (_, _, repos) in entries(GROUPS[group]['repos']).items():
+        out += [f'{login}/{name}' for name, _ in repos]
+    return out
+
+
+def commits_since(full, since):
+    status, data = github(f"/repos/{full}/commits?per_page=100&since={since.strftime('%Y-%m-%dT%H:%M:%SZ')}")
     if status >= 400 or not isinstance(data, list):
         return []
     return [(c['sha'], c['commit']['message'].splitlines()[0][:70]) for c in data]
 
 
-def changed_docs(full_name, sha):
-    """Markdown files changed in one commit."""
-    status, data = github(f'/repos/{full_name}/commits/{sha}')
+def changed_docs(full, sha):
+    status, data = github(f'/repos/{full}/commits/{sha}')
     if status >= 400:
         return []
     return [f['filename'] for f in data.get('files', []) if f['filename'].lower().endswith('.md')]
@@ -65,27 +61,14 @@ def messages_since(channel_id, since):
     return [m for m in msgs if not m['author'].get('bot') and m.get('type', 0) in (0, 19)]
 
 
-def places():
-    """Text channels, forums and active threads outside the archive, as (name, id)."""
-    chans = discord('GET', f'/guilds/{GUILD}/channels')
-    archived = {c['id'] for c in chans if c.get('parent_id') == ARCHIVE} | {ARCHIVE, JARRI_CORE}
-    names = {c['id']: c['name'] for c in chans}
-    out = [(c['name'], c['id']) for c in chans if c['type'] in TEXT_TYPES and c['id'] not in archived]
-    threads = discord('GET', f'/guilds/{GUILD}/threads/active')['threads']
-    out += [(f"{names.get(t['parent_id'], '?')} / {t['name']}", t['id'])
-            for t in threads if t.get('parent_id') not in archived]
-    return out
-
-
 def summarize(material):
-    """Short English summary from the week's material, or None without an API key."""
     key = os.environ.get('ANTHROPIC_API_KEY')
     if not key:
         return None
-    prompt = ("You write the weekly report for the Discord server of Jarri Workspace, an open-source desktop app "
-              "and its modules. From the material below (commits, changed docs, Discord messages from the last "
-              "7 days), write at most 6 short bullets in English: what was built, decisions taken, open questions. "
-              "Use only what is in the material. If the week was quiet, say so in one line.\n\n" + material)
+    prompt = ("You write the weekly report for a group in the Discord server AI-Den. The group works on the "
+              "material below (commits, changed docs, Discord messages and notes from the last 7 days). Write at "
+              "most 6 short bullets in English: what was built, decisions taken, open questions. Use only what "
+              "is in the material. If the week was quiet, say so in one line.\n\n" + material)
     status, data = http('POST', 'https://api.anthropic.com/v1/messages', {
         'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
     }, {'model': MODEL, 'max_tokens': 700, 'messages': [{'role': 'user', 'content': prompt}]})
@@ -94,13 +77,16 @@ def summarize(material):
     return data['content'][0]['text'].strip()
 
 
-def build(now):
+def build(group, now):
+    cfg = GROUPS[group]
     since = now - dt.timedelta(days=DAYS)
-    parts = [f'# 📰 Jarri Workspace, week {now.isocalendar().week}', f'*{fmt(since)} – {fmt(now)}*']
+    parts = [f"# 📰 {cfg['name']}, week {now.isocalendar().week}", f'*{fmt(since)} – {fmt(now)}*']
     material = []
 
+    jarri_repos = set(repos_in('jarri'))
+    repos = [r for r in repos_in(group) if r not in jarri_repos or group == 'jarri']
     coding, docs = [], []
-    for repo in REPOS:
+    for repo in repos:
         commits = commits_since(repo, since)
         if not commits:
             continue
@@ -116,22 +102,30 @@ def build(now):
         parts.append('## 📄 Docs changed\n' + '\n'.join(docs))
 
     talk = []
-    for name, cid in places():
+    for cid in cfg['chat']:
+        if cid == JARRI_CORE:
+            continue
         msgs = messages_since(cid, since)
         if not msgs:
             continue
+        name = next(c['name'] for c in discord('GET', f'/guilds/{GUILD}/channels') if c['id'] == cid)
         people = len({m['author']['id'] for m in msgs})
         talk.append(f"• #{name}: {len(msgs)} message{'s' if len(msgs) > 1 else ''} from {people} person{'s' if people > 1 else ''}")
         material.append(f'[#{name}] ' + ' | '.join(f"{m['author']['username']}: {m['content'][:300]}" for m in msgs))
     if talk:
         parts.append('## 💬 Discussion\n' + '\n'.join(talk))
 
+    notes = [m for m in messages_since(cfg['claudosaurus'], since) if not LINK.search(m['content'])]
+    if notes:
+        parts.append('## 📝 From the team\n' + '\n'.join(f"• {m['content'][:300]}" for m in notes))
+        material.append('[notes] ' + ' | '.join(m['content'][:300] for m in notes))
+
     text = '\n\n'.join(material)[:MAX_CHARS]
     summary = summarize(text) if text else None
     if summary:
         parts.insert(2, '## 🧭 Summary\n' + summary)
-    if not (coding or talk):
-        parts.append('😴 Quiet week. Nothing new in the repos or the server.')
+    if not (coding or talk or notes):
+        parts.append('😴 Quiet week. Nothing new in the repos or the chat.')
     return parts
 
 
@@ -146,14 +140,15 @@ def chunks(parts, limit=1900):
 
 
 def main():
+    group = sys.argv[sys.argv.index('--group') + 1]
     now = dt.datetime.now(dt.timezone.utc)
-    messages = chunks(build(now))
-    if '--dry-run' in sys.argv:
+    messages = chunks(build(group, now))
+    if DRY:
         print('\n---\n'.join(messages))
         return
     for text in messages:
-        discord('POST', f'/channels/{SUMMARY}/messages', {'content': text, 'allowed_mentions': {'parse': []}})
-    print(f'Posted {len(messages)} message(s) in #claudosaurus')
+        discord('POST', f"/channels/{GROUPS[group]['weekly']}/messages", {'content': text, 'allowed_mentions': {'parse': []}})
+    print(f"Posted {len(messages)} message(s) in {GROUPS[group]['name']} #weekly-report")
 
 
 if __name__ == '__main__':

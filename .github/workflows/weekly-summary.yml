@@ -8,15 +8,16 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
+    strategy:
+      matrix:
+        group: [ai, jarri]
     steps:
       - uses: actions/checkout@v4
-      - run: python3 weekly_summary.py
+      - run: python3 weekly_summary.py --group ${{ matrix.group }}
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
-          GUILD_ID: ${{ vars.GUILD_ID }}
-          SUMMARY_CHANNEL_ID: ${{ vars.SUMMARY_CHANNEL_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
