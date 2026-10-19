@@ -16,7 +16,7 @@ import re
 import sys
 import urllib.parse
 
-from config import GROUPS, EXCLUDE
+from config import GROUPS, EXCLUDE, JARRI_REPOS, ACCOUNTS, NAMES
 from repo_sync import discord, github
 
 LINK = re.compile(r'github\.com/([\w.-]+)(?:/([\w.-]+))?', re.I)
@@ -30,6 +30,7 @@ def author_name(m):
 
 
 def clean(text, limit=90):
+    text = ' '.join(re.sub(r'^-?\s*Beskrivning:\s*', '', text).split(' - Ämnen')[0].split())
     text = re.sub(r'!\[.*?\]\(.*?\)|\[(.*?)\]\(.*?\)|<[^>]+>|[`*_]', lambda x: x.group(1) or '', text).strip()
     return (text[:limit - 1] + '…') if len(text) > limit else text
 
@@ -49,13 +50,19 @@ def summary(full):
     return ''
 
 
-def user_repos(login):
-    """Public, non-fork repos of a user, as (name, summary)."""
+def belongs(group, full):
+    """Jarri repos go in the jarri list, everything else in the ai list."""
+    return (full in JARRI_REPOS) == (group == 'jarri')
+
+
+def user_repos(login, group):
+    """Public, non-fork repos of a user that belong to the group, as (name, summary)."""
     status, data = github(f'/users/{login}/repos?per_page=100&type=owner&sort=pushed')
     if status >= 400 or not isinstance(data, list):
         return None
     return [(r['name'], summary(r['full_name'])) for r in data
-            if not r['fork'] and r['full_name'] not in EXCLUDE]
+            if (not r['fork'] or r['full_name'] in JARRI_REPOS)
+            and r['full_name'] not in EXCLUDE and belongs(group, r['full_name'])]
 
 
 def entries(channel_id):
@@ -108,8 +115,8 @@ def react(channel_id, message_id, emoji):
         discord('PUT', f'/channels/{channel_id}/messages/{message_id}/reactions/{urllib.parse.quote(emoji)}/@me')
 
 
-def add_user(channel_id, login, name, known):
-    repos = user_repos(login)
+def add_user(channel_id, login, name, known, group):
+    repos = user_repos(login, group)
     if repos is None:
         return False
     current = known.get(login.lower())
@@ -117,9 +124,9 @@ def add_user(channel_id, login, name, known):
     return True
 
 
-def add_repo(channel_id, login, repo, name, known):
+def add_repo(channel_id, login, repo, name, known, group):
     full = f'{login}/{repo}'
-    if full in EXCLUDE:
+    if full in EXCLUDE or not belongs(group, full):
         return False
     status, _ = github(f'/repos/{full}')
     if status >= 400:
@@ -146,14 +153,37 @@ def sync(group):
         for hit in links:
             login, repo = hit.group(1), hit.group(2)
             if repo:
-                results.append(add_repo(repos_ch, login, repo, name, known))
+                results.append(add_repo(repos_ch, login, repo, name, known, group))
             else:
-                results.append(add_user(repos_ch, login, name, known))
+                results.append(add_user(repos_ch, login, name, known, group))
             known = entries(repos_ch)
         react(ch, m['id'], OK if all(results) else FAIL)
 
 
+def rebuild(group):
+    """Rebuilds a group's list from every account in ACCOUNTS. Removes entries that no longer have repos in the group."""
+    ch = GROUPS[group]['repos']
+    known = entries(ch)
+    wanted = set()
+    for login in ACCOUNTS:
+        repos = user_repos(login, group)
+        if not repos:
+            continue
+        wanted.add(login.lower())
+        current = known.get(login.lower())
+        save(ch, login, current[1] if current else NAMES[login], repos, current)
+    for key, (mid, name, _) in known.items():
+        if key not in wanted:
+            print(f'[{group}] tar bort tomt inlägg: {name}')
+            if not DRY:
+                discord('DELETE', f'/channels/{ch}/messages/{mid}')
+
+
 if __name__ == '__main__':
-    for group in GROUPS:
-        sync(group)
+    if '--rebuild' in sys.argv:
+        for group in GROUPS:
+            rebuild(group)
+    else:
+        for group in GROUPS:
+            sync(group)
     print('klart', 'DRY' if DRY else '')

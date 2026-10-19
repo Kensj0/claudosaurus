@@ -21,3 +21,17 @@ JARRI_CORE = '1561803926867804225'  # #jarri-core: Core Group only, never read o
 
 # Repon som aldrig läggs in i listorna, även om någon länkar dem (t.ex. privat/Dalvolt-relaterat)
 EXCLUDE = {'Kensj0/doris'}
+
+# Jarri-relaterade repon. Allt annat hamnar i AI:s lista. Forks läggs aldrig in via profil.
+JARRI_REPOS = {
+    'TorMatzAndren/jarri-workspace-core',
+    'TorMatzAndren/ChronoGit',
+    'TorMatzAndren/Jarri-Benchmark',
+    'TorMatzAndren/jarri-codex-handoff',
+    'Kensj0/jarri-workspace-core',
+    'Kensj0/kennystuner',
+}
+
+# Konton som hela listan byggs från, och hur de visas
+ACCOUNTS = ['TorMatzAndren', 'Kensj0']
+NAMES = {'TorMatzAndren': 'Dretski', 'Kensj0': 'Sh0ken'}
