@@ -4,7 +4,7 @@
 Posts once a week in #claudosaurus: what happened in the Jarri repos (commits and
 changed docs) and in the Discord server (messages), last 7 days. If ANTHROPIC_API_KEY
 is set, a short summary is written from that material. Only the repos in REPOS are
-read, and archived channels are skipped, so nothing from other projects is included.
+read. Archived channels and #jarri-core are skipped, so nothing from other projects is included.
 
   python3 weekly_summary.py            # posts to #claudosaurus
   python3 weekly_summary.py --dry-run  # prints the text only
@@ -20,6 +20,7 @@ from repo_sync import GUILD, discord, github, http
 
 SUMMARY = os.environ.get('SUMMARY_CHANNEL_ID') or '1561799044194631680'  # #claudosaurus
 ARCHIVE = '1561799036967718973'  # 📦 ARCHIVE, skipped completely
+JARRI_CORE = '1561803926867804225'  # #jarri-core, Core Group only, never reported
 REPOS = [
     'TorMatzAndren/jarri-workspace-core',
     'Kensj0/jarri-workspace-core',
@@ -67,7 +68,7 @@ def messages_since(channel_id, since):
 def places():
     """Text channels, forums and active threads outside the archive, as (name, id)."""
     chans = discord('GET', f'/guilds/{GUILD}/channels')
-    archived = {c['id'] for c in chans if c.get('parent_id') == ARCHIVE} | {ARCHIVE}
+    archived = {c['id'] for c in chans if c.get('parent_id') == ARCHIVE} | {ARCHIVE, JARRI_CORE}
     names = {c['id']: c['name'] for c in chans}
     out = [(c['name'], c['id']) for c in chans if c['type'] in TEXT_TYPES and c['id'] not in archived]
     threads = discord('GET', f'/guilds/{GUILD}/threads/active')['threads']
