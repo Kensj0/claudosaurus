@@ -8,37 +8,38 @@ Namnet är en blandning av *Claude* och *dinosaurus*. 🦖
 
 ## Grupperna
 
-Servern har två kategorier. Varje grupp har samma tre bot-kanaler:
+Servern har två kategorier. Varje grupp har samma bot-kanaler:
 
 | Kanal | Vad |
 |---|---|
 | `#claudosaurus` | Skriv här till boten (se nedan). Samarbetare och Kärngruppen. |
-| `#repos` | Listan över konton och repon. Boten skriver, människor läser. |
 | `#weekly-report` | Veckorapporten. Boten skriver, människor läser. |
+| `#repos` | Listan över konton och repon. Boten skriver, människor läser. |
 
-**AI:** `#general`, `#ideas` och `Hangout`. Rapporten bygger på repona i AI:s lista och på chatten i `#general` och `#ideas`.
+**AI:** `#general`, `#ideas`, `#claudosaurus`, `#weekly-report`, `#repos` och `Hangout` (röst). Rapporten bygger på repona i AI:s lista och på chatten i `#general` och `#ideas`.
 
-**Jarri Workspace:** `#workspace-core` och `#modules`. Rapporten bygger på repona i Jarris lista och på chatten i de två kanalerna. `#jarri-core` läses aldrig av boten.
+**Jarri Workspace:** `#general`, `#workspace-core`, `#modules`, `#jarri-core`, `#claudosaurus`, `#weekly-report`, `#repos` och `Hangout` (röst). Rapporten bygger på repona i Jarris lista och på chatten i `#general`, `#workspace-core` och `#modules`.
+
+`#jarri-core` är bara för Kärngruppen och läses aldrig av boten.
 
 ---
 
 ## Så använder du Claudosaurus
 
-Skriv i gruppens `#claudosaurus`. Boten sätter ✅ när den har tagit emot det.
+Skriv i gruppens `#claudosaurus`. Boten sätter ✅ när den har tagit emot det, och ⚠️ om länken inte går att läsa.
 
-- **Profil** (`github.com/namn`): kontot läggs in i `#repos` med alla sina publika repon, utan forks.
+- **Profil** (`github.com/namn`): kontot läggs in i `#repos` med alla sina publika repon. Forks tas inte med.
 - **Repo** (`github.com/namn/repo`): bara det repot läggs in under kontot.
 - **Anteckning** (vad som helst utan länk): kommer med under "📝 From the team" i nästa veckorapport.
 
 Varje konto får ett eget inlägg i `#repos`, och det uppdateras när nya repon läggs till:
 
 > **Sh0ken** · [github.com/Kensj0](<https://github.com/Kensj0>)
-> -# **jarri-workspace-core**: Reusable cognitive workspace substrate for …
 > -# **kennystuner**: A free, offline-capable instrument tuner that …
 
 Varje repo visas med en kort beskrivning från GitHub (eller första raden i README). Kontot tillhör den som länkade först.
 
-Om något inte går att läsa (privat repo, fel länk) får meddelandet ⚠️.
+**Vilken lista ett repo hamnar i:** repon i `JARRI_REPOS` (i `config.py`) hamnar i Jarri Workspace. Alla andra publika repon hamnar i AI. Ett Jarri-repo som länkas i AI:s `#claudosaurus` får ⚠️.
 
 ---
 
@@ -51,7 +52,8 @@ Om något inte går att läsa (privat repo, fel länk) får meddelandet ⚠️.
 
 - Inget sparas i en databas. Boten ser vad som är gjort via ✅ och sina egna inlägg.
 - Om hemligheten `ANTHROPIC_API_KEY` finns görs en kort AI-sammanfattning av veckan. Utan den postas bara siffrorna.
-- Undantag: `EXCLUDE` i `config.py` (just nu `Kensj0/doris`) läggs aldrig in i en lista.
+- `EXCLUDE` i `config.py` (just nu `Kensj0/doris`) läggs aldrig in i en lista.
+- `python3 directory_sync.py --rebuild` bygger om båda listorna från `ACCOUNTS` i `config.py`, och tar bort inlägg som inte längre har några repon.
 
 Testa utan att posta:
 
@@ -67,15 +69,11 @@ python3 weekly_summary.py --group ai --dry-run
 
 | Fil | Vad |
 |---|---|
-| [`config.py`](config.py) | Kanal-ID:n för de två grupperna, och undantagslistan |
-| [`directory_sync.py`](directory_sync.py) | Läser länkar och uppdaterar `#repos` |
+| [`config.py`](config.py) | Kanal-ID:n för grupperna, `JARRI_REPOS`, konton och undantagslistan |
+| [`directory_sync.py`](directory_sync.py) | Läser länkar, uppdaterar `#repos` och bygger om listorna |
 | [`weekly_summary.py`](weekly_summary.py) | Veckorapporten per grupp (`--group ai` eller `jarri`) |
 | [`repo_sync.py`](repo_sync.py) | Hjälpfunktioner för Discord, GitHub och HTTP |
 | [`.github/workflows/`](.github/workflows) | De två schemalagda workflowsen |
-
-## Licens
-
-[MIT](LICENSE): fritt att använda, ändra och dela, så länge licenstexten följer med.
 
 ## License
 
