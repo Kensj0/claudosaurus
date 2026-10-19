@@ -78,7 +78,7 @@ def entries(channel_id):
             continue
         repos = []
         for line in rest:
-            hit = re.match(r'-# \*\*(.+?)\*\*: ?(.*)', line)
+            hit = re.match(r'-# \*\*(?:\[)?(.+?)(?:\]\(<[^>]*>\))?\*\*:? ?(.*)', line)
             if hit:
                 repos.append((hit.group(1), hit.group(2)))
         out[login.group(1).lower()] = (m['id'], name.group(1), repos)
@@ -89,7 +89,8 @@ def render(login, name, repos):
     lines = [f'**{name}** · [github.com/{login}](<https://github.com/{login}>)']
     shown = []
     for repo, text in repos:
-        line = f'-# **{repo}**: {text}' if text else f'-# **{repo}**'
+        link = f'[{repo}](<https://github.com/{login}/{repo}>)'
+        line = f'-# **{link}**: {text}' if text else f'-# **{link}**'
         if len('\n'.join(lines + shown + [line])) + 12 > MAX:
             break
         shown.append(line)
@@ -165,13 +166,20 @@ def rebuild(group):
     ch = GROUPS[group]['repos']
     known = entries(ch)
     wanted = set()
+    complete = True
     for login in ACCOUNTS:
         repos = user_repos(login, group)
+        if repos is None:  # GitHub svarade inte. Då vet vi inte vad som finns, så inget tas bort.
+            print(f'[{group}] kunde inte läsa {login}, hoppar över borttagning')
+            complete = False
+            continue
         if not repos:
             continue
         wanted.add(login.lower())
         current = known.get(login.lower())
         save(ch, login, current[1] if current else NAMES[login], repos, current)
+    if not complete:
+        return
     for key, (mid, name, _) in known.items():
         if key not in wanted:
             print(f'[{group}] tar bort tomt inlägg: {name}')
