@@ -73,7 +73,7 @@ python3 weekly_summary.py --group ai --dry-run
 | [`directory_sync.py`](directory_sync.py) | Läser länkar, uppdaterar `#repos` och bygger om listorna |
 | [`weekly_summary.py`](weekly_summary.py) | Veckorapporten per grupp (`--group ai` eller `jarri`) |
 | [`repo_sync.py`](repo_sync.py) | Hjälpfunktioner för Discord, GitHub och HTTP |
-| [`.github/workflows/`](.github/workflows) | De två schemalagda workflowsen |
+| [`.github/workflows/`](.github/workflows) | De två schemalagda workflowsen (`directory-sync.yml` och `weekly-summary.yml`) |
 
 ## License
 
