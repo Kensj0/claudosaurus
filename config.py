@@ -30,6 +30,14 @@ JARRI_REPOS = {
     'TorMatzAndren/jarri-codex-handoff',
     'Kensj0/jarri-workspace-core',
     'Kensj0/kennystuner',
+    'Kensj0/jarri-apps',
+    'Kensj0/module-store',
+    'Kensj0/claude-in-brave',
+    'Kensj0/zorin-clipboard-pling',
+    'Kensj0/terminal',
+    'Kensj0/phone',
+    'Kensj0/ai-usage',
+    'Kensj0/claude-history',
 }
 
 # Konton som hela listan byggs från, och hur de visas
