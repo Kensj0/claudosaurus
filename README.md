@@ -76,3 +76,11 @@ python3 weekly_summary.py --group ai --dry-run
 ## Licens
 
 [MIT](LICENSE): fritt att använda, ändra och dela, så länge licenstexten följer med.
+
+## License
+
+Copyright (c) 2026 Kenny Sjöstedt.
+
+This project is licensed under the GNU Affero General Public License v3.0 (see [LICENSE](LICENSE)).
+
+A commercial license is available from the copyright holder for use that the AGPL does not allow. Contact the holder through GitHub (Kensj0).
