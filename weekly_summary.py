@@ -1,26 +1,36 @@
 #!/usr/bin/env python3
 """Claudosaurus: weekly report for Jarri Workspace.
 
-Posts once a week in #claudosaurus: commits in the Jarri repos and activity
-in #core and #modules over the last 7 days.
+Posts once a week in #claudosaurus: what happened in the Jarri repos (commits and
+changed docs) and in the Discord server (messages), last 7 days. If ANTHROPIC_API_KEY
+is set, a short summary is written from that material. Only the repos in REPOS are
+read, and archived channels are skipped, so nothing from other projects is included.
 
   python3 weekly_summary.py            # posts to #claudosaurus
   python3 weekly_summary.py --dry-run  # prints the text only
 
-Environment variables (optional, see README): CORE_CHANNEL_ID, MODULES_CHANNEL_ID,
-SUMMARY_CHANNEL_ID, GITHUB_TOKEN, DISCORD_TOKEN.
+Environment variables (optional, see README): SUMMARY_CHANNEL_ID, GITHUB_TOKEN,
+DISCORD_TOKEN, ANTHROPIC_API_KEY.
 """
 import datetime as dt
 import os
 import sys
 
-from repo_sync import discord, github
+from repo_sync import GUILD, discord, github, http
 
-CORE = os.environ.get('CORE_CHANNEL_ID') or '1561799039987622063'      # #core
-MODULES = os.environ.get('MODULES_CHANNEL_ID') or '1561799041635848259'  # #modules
 SUMMARY = os.environ.get('SUMMARY_CHANNEL_ID') or '1561799044194631680'  # #claudosaurus
-REPOS = ['TorMatzAndren/jarri-workspace-core', 'Kensj0/jarri-workspace-core', 'Kensj0/jarri-apps']
+ARCHIVE = '1561799036967718973'  # 📦 ARCHIVE, skipped completely
+REPOS = [
+    'TorMatzAndren/jarri-workspace-core',
+    'Kensj0/jarri-workspace-core',
+    'Kensj0/jarri-apps',   # private: not visible to the bot until made public or given a token
+    'Kensj0/kennystuner',  # the tuner module
+    'Kensj0/claudosaurus',
+]
+TEXT_TYPES = (0, 5, 15)  # text, announcement, forum
 DAYS = 7
+MAX_CHARS = 20000  # cap on text sent to the summary model
+MODEL = 'claude-sonnet-5-5'
 DISCORD_EPOCH = 1420070400000
 MONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split()
 
@@ -34,48 +44,93 @@ def time_snowflake(t):
 
 
 def commits_since(full_name, since):
-    """List of commit titles, or None if the repo can't be read (private or removed)."""
+    """Commit shas and titles since the given time, empty if the repo can't be read."""
     status, data = github(f"/repos/{full_name}/commits?per_page=100&since={since.strftime('%Y-%m-%dT%H:%M:%SZ')}")
     if status >= 400 or not isinstance(data, list):
-        return None
-    return [c['commit']['message'].splitlines()[0][:70] for c in data]
+        return []
+    return [(c['sha'], c['commit']['message'].splitlines()[0][:70]) for c in data]
 
 
-def channel_activity(channel_id, since):
-    """(messages, people) from humans in the channel since the given time."""
+def changed_docs(full_name, sha):
+    """Markdown files changed in one commit."""
+    status, data = github(f'/repos/{full_name}/commits/{sha}')
+    if status >= 400:
+        return []
+    return [f['filename'] for f in data.get('files', []) if f['filename'].lower().endswith('.md')]
+
+
+def messages_since(channel_id, since):
     msgs = discord('GET', f'/channels/{channel_id}/messages?limit=100&after={time_snowflake(since)}')
-    human = [m for m in msgs if not m['author'].get('bot') and m.get('type', 0) in (0, 19)]
-    return len(human), len({m['author']['id'] for m in human})
+    return [m for m in msgs if not m['author'].get('bot') and m.get('type', 0) in (0, 19)]
+
+
+def places():
+    """Text channels, forums and active threads outside the archive, as (name, id)."""
+    chans = discord('GET', f'/guilds/{GUILD}/channels')
+    archived = {c['id'] for c in chans if c.get('parent_id') == ARCHIVE} | {ARCHIVE}
+    names = {c['id']: c['name'] for c in chans}
+    out = [(c['name'], c['id']) for c in chans if c['type'] in TEXT_TYPES and c['id'] not in archived]
+    threads = discord('GET', f'/guilds/{GUILD}/threads/active')['threads']
+    out += [(f"{names.get(t['parent_id'], '?')} / {t['name']}", t['id'])
+            for t in threads if t.get('parent_id') not in archived]
+    return out
+
+
+def summarize(material):
+    """Short English summary from the week's material, or None without an API key."""
+    key = os.environ.get('ANTHROPIC_API_KEY')
+    if not key:
+        return None
+    prompt = ("You write the weekly report for the Discord server of Jarri Workspace, an open-source desktop app "
+              "and its modules. From the material below (commits, changed docs, Discord messages from the last "
+              "7 days), write at most 6 short bullets in English: what was built, decisions taken, open questions. "
+              "Use only what is in the material. If the week was quiet, say so in one line.\n\n" + material)
+    status, data = http('POST', 'https://api.anthropic.com/v1/messages', {
+        'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+    }, {'model': MODEL, 'max_tokens': 700, 'messages': [{'role': 'user', 'content': prompt}]})
+    if status >= 400:
+        raise RuntimeError(f'Anthropic API: {status} {data}')
+    return data['content'][0]['text'].strip()
 
 
 def build(now):
     since = now - dt.timedelta(days=DAYS)
-    week = now.isocalendar().week
-    parts = [f'# 📰 Jarri Workspace, week {week}', f'*{fmt(since)} – {fmt(now)}*']
+    parts = [f'# 📰 Jarri Workspace, week {now.isocalendar().week}', f'*{fmt(since)} – {fmt(now)}*']
+    material = []
 
-    coding, private = [], []
+    coding, docs = [], []
     for repo in REPOS:
-        titles = commits_since(repo, since)
-        if titles is None:
-            private.append(repo)
-        elif titles:
-            coding.append(f"• **{repo}**: {len(titles)}{'+' if len(titles) == 100 else ''} commit{'s' if len(titles) > 1 else ''}"
-                          + ''.join(f'\n  › {t}' for t in titles[:3]))
+        commits = commits_since(repo, since)
+        if not commits:
+            continue
+        coding.append(f"• **{repo}**: {len(commits)}{'+' if len(commits) == 100 else ''} commit{'s' if len(commits) > 1 else ''}"
+                      + ''.join(f'\n  › {title}' for _, title in commits[:3]))
+        material.append(f"[{repo}] commits: " + '; '.join(title for _, title in commits))
+        files = sorted({f for sha, _ in commits[:20] for f in changed_docs(repo, sha)})
+        if files:
+            docs.append(f"• **{repo}**: " + ', '.join(files[:8]))
     if coding:
         parts.append('## 🔨 Code on GitHub\n' + '\n'.join(coding))
+    if docs:
+        parts.append('## 📄 Docs changed\n' + '\n'.join(docs))
 
     talk = []
-    for name, cid in (('#core', CORE), ('#modules', MODULES)):
-        count, people = channel_activity(cid, since)
-        if count:
-            talk.append(f"• {name}: {count} message{'s' if count > 1 else ''} from {people} person{'s' if people > 1 else ''}")
+    for name, cid in places():
+        msgs = messages_since(cid, since)
+        if not msgs:
+            continue
+        people = len({m['author']['id'] for m in msgs})
+        talk.append(f"• #{name}: {len(msgs)} message{'s' if len(msgs) > 1 else ''} from {people} person{'s' if people > 1 else ''}")
+        material.append(f'[#{name}] ' + ' | '.join(f"{m['author']['username']}: {m['content'][:300]}" for m in msgs))
     if talk:
         parts.append('## 💬 Discussion\n' + '\n'.join(talk))
 
+    text = '\n\n'.join(material)[:MAX_CHARS]
+    summary = summarize(text) if text else None
+    if summary:
+        parts.insert(2, '## 🧭 Summary\n' + summary)
     if not (coding or talk):
-        parts.append('😴 Quiet week. Nothing new in the repos, #core or #modules.')
-    if private:
-        parts.append(f"-# 🔒 Not visible to the bot, so not counted: {', '.join(private)}")
+        parts.append('😴 Quiet week. Nothing new in the repos or the server.')
     return parts
 
 
