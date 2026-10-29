@@ -20,7 +20,7 @@ from repo_sync import GUILD, discord, github, http
 
 DAYS = 7
 MAX_CHARS = 20000  # cap on text sent to the summary model
-MODEL = 'claude-sonnet-5-5'
+MODEL = 'claude-haiku-5-5'
 DISCORD_EPOCH = 1420070400000
 MONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split()
 DRY = '--dry-run' in sys.argv
