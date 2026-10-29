@@ -129,13 +129,29 @@ def build(group, now):
     return parts
 
 
-def chunks(parts, limit=1900):
+def split_long(text, limit):
+    if len(text) <= limit:
+        return [text]
     out, cur = [], ''
-    for p in parts:
-        if cur and len(cur) + len(p) + 2 > limit:
+    for line in text.split('\n'):
+        if cur and len(cur) + len(line) + 1 > limit:
             out.append(cur)
             cur = ''
-        cur = f'{cur}\n\n{p}' if cur else p
+        while len(line) > limit:
+            out.append(line[:limit])
+            line = line[limit:]
+        cur = f'{cur}\n{line}' if cur else line
+    return out + [cur] if cur else out
+
+
+def chunks(parts, limit=1900):
+    out, cur = [], ''
+    for part in parts:
+        for p in split_long(part, limit):
+            if cur and len(cur) + len(p) + 2 > limit:
+                out.append(cur)
+                cur = ''
+            cur = f'{cur}\n\n{p}' if cur else p
     return out + [cur] if cur else out
 
 
