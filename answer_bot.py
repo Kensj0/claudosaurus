@@ -30,13 +30,15 @@ PENDING_SECONDS = 600
 HISTORY_WORDS = ('igår', 'sa ', 'sade', 'bestämdes', 'historik', 'senast', 'vad hände')
 SYSTEM = (
     'Du är Claudosaurus, boten för Discord-servern AI-Den. Svara kort på svenska i neutral ton. '
-    'Du kan inte ändra något på egen hand. Du citerar bara från underlag du fått i meddelandet. '
-    'Om underlaget saknas: säg det.'
+    'Ändringar i servern görs bara efter ett ja från Kärngruppen. '
+    'Du citerar bara från underlag du fått i meddelandet. Om underlaget saknas: säg det.'
 )
 ACTION_PROMPT = (
     'Du omvandlar en begäran från en admin till JSON och svarar bara med JSON. '
-    'Tillåtna actions: "channel_topic" (args: channel = kanalnamn utan #, text = ny beskrivning) '
-    'och "post_text" (args: channel = kanalnamn utan #, text = exakt texten att skriva). '
+    'Tillåtna actions: "channel_topic" (ny kanalbeskrivning) och "post_text" (text att skriva). '
+    'Format: {"action": "...", "channels": ["kanal-ID", ...], "text": "..."}. '
+    'Välj kanal-ID:n bara från listan Kanaler. Två kanaler med samma namn skiljs åt med kategorin. '
+    'Om begäran saknar en ny text, sätt "text" till "". '
     'Om begäran inte passar: {"action": "none"}.'
 )
 REPO_LINK = re.compile(r'github\.com/([\w.-]+)/([\w.-]+)')
@@ -109,16 +111,16 @@ def readme(owner, repo):
         return response.read().decode('utf-8')[:8000]
 
 
-def find_channel(guild, name):
-    name = name.strip().lstrip('#')
-    for channel in guild.text_channels:
-        if channel.id in READABLE and channel.name == name:
-            return channel
-    return None
+def channel_list(guild):
+    return '\n'.join(
+        f'{channel.id} #{channel.name} (kategori: {channel.category.name if channel.category else "ingen"})'
+        for channel in guild.text_channels if channel.id in READABLE
+    )
 
 
 async def propose(message, request):
-    raw = await asyncio.to_thread(ask, ACTION_PROMPT, request, 300)
+    prompt_input = f'Kanaler:\n{channel_list(message.guild)}\n\nBegäran: {request}'
+    raw = await asyncio.to_thread(ask, ACTION_PROMPT, prompt_input, 300)
     try:
         proposal = json.loads(raw[raw.index('{'):raw.rindex('}') + 1])
     except ValueError:
@@ -127,29 +129,39 @@ async def propose(message, request):
     if proposal.get('action') not in ('channel_topic', 'post_text'):
         await message.reply('Den ändringen kan jag inte göra.', mention_author=False)
         return
-    channel = find_channel(message.guild, proposal.get('channel', ''))
-    if channel is None:
-        await message.reply('Hittar ingen tillåten kanal med det namnet.', mention_author=False)
+    text = proposal.get('text', '').strip()[:2000]
+    if not text:
+        await message.reply('Skriv den nya texten också, efter ett kolon. Exempel: '
+                            '`uppdatera beskrivningen i ai-kanalen: Här diskuterar vi AI.`',
+                            mention_author=False)
         return
-    text = proposal.get('text', '')[:2000]
+    ids = [int(value) for value in proposal.get('channels', []) if str(value).isdigit()]
+    channels = [client.get_channel(channel_id) for channel_id in ids if channel_id in READABLE]
+    channels = [channel for channel in channels if channel is not None]
+    if not channels or len(channels) != len(ids):
+        await message.reply('Hittar inte alla kanalerna. Säg vilka kanaler det gäller, med namn och grupp.',
+                            mention_author=False)
+        return
     pending[message.channel.id] = {
-        'action': proposal['action'], 'channel_id': channel.id, 'text': text,
+        'action': proposal['action'], 'channel_ids': [channel.id for channel in channels], 'text': text,
         'expires': time.time() + PENDING_SECONDS,
     }
+    names = ', '.join(f'#{channel.name}' for channel in channels)
     await message.reply(
-        f'Föreslagen ändring: {proposal["action"]} i #{channel.name}:\n> {text}\n'
+        f'Föreslagen ändring: {proposal["action"]} i {names}:\n> {text}\n'
         'En Kärngruppen-medlem svarar **ja** för att köra. Gäller i 10 minuter.',
         mention_author=False, allowed_mentions=discord.AllowedMentions.none(),
     )
 
 
 async def run_pending(message, change):
-    channel = client.get_channel(change['channel_id'])
-    if change['action'] == 'channel_topic':
-        await channel.edit(topic=change['text'], reason=f'Ändrad av {message.author} via Claudosaurus')
-    else:
-        await channel.send(change['text'], allowed_mentions=discord.AllowedMentions.none())
-    log_action(message, change['action'], channel, 'ok')
+    for channel_id in change['channel_ids']:
+        channel = client.get_channel(channel_id)
+        if change['action'] == 'channel_topic':
+            await channel.edit(topic=change['text'], reason=f'Ändrad av {message.author} via Claudosaurus')
+        else:
+            await channel.send(change['text'], allowed_mentions=discord.AllowedMentions.none())
+        log_action(message, change['action'], channel, 'ok')
     await message.reply('Klart.', mention_author=False)
 
 
@@ -197,7 +209,7 @@ async def on_message(message):
             return
         await handle_kick(message)
         return
-    if lowered.startswith(('ändra', 'skriv i')):
+    if lowered.startswith(('ändra', 'uppdatera', 'skriv i')):
         if not is_core(message.author):
             await message.reply('Bara Kärngruppen kan ge ändringar.', mention_author=False)
             return
