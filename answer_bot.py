@@ -6,6 +6,9 @@ GitHub-länkar hanteras fortfarande av directory_sync.py, så de hoppas över h�
 """
 import asyncio
 import collections
+import datetime as dt
+import json
+import os
 import time
 
 import anthropic
@@ -14,12 +17,14 @@ import discord
 from config import GROUPS
 
 ANSWER_CHANNELS = {int(group['claudosaurus']) for group in GROUPS.values()}
+KERNGRUPPEN = 1558439231842418783  # 👑 Kärngruppen, den enda som får ge admin-kommandon
+ADMIN_LOG = os.environ.get('ADMIN_LOG', 'admin-log.jsonl')
 MODEL = 'claude-haiku-5-5'
 MAX_PER_HOUR = 20
 SYSTEM = (
     'Du är Claudosaurus, boten för Discord-servern AI-Den. Svara kort på svenska i neutral ton. '
-    'Du kan inte ändra något i servern och inte ta bort användare. '
-    'Om någon ber om en ändring: säg att admin-kommandon kommer senare.'
+    'Du kan inte ändra något i servern på egen hand. '
+    'Admin-kommandon som kicka ges bara av Kärngruppen.'
 )
 
 recent = collections.deque()
@@ -40,6 +45,42 @@ def allowed():
     return True
 
 
+def is_core(member):
+    return any(role.id == KERNGRUPPEN for role in member.roles)
+
+
+def log_action(message, action, target, result):
+    entry = {
+        'time': dt.datetime.now(dt.timezone.utc).isoformat(),
+        'by': str(message.author), 'by_id': message.author.id,
+        'action': action, 'target': str(target), 'target_id': target.id, 'result': result,
+    }
+    with open(ADMIN_LOG, 'a', encoding='utf-8') as log:
+        log.write(json.dumps(entry, ensure_ascii=False) + '\n')
+
+
+async def handle_kick(message):
+    targets = [member for member in message.mentions if member.id != client.user.id]
+    if not targets:
+        await message.reply('Skriv vem som ska kickas, till exempel: kicka @namn', mention_author=False)
+        return
+    lines = []
+    for target in targets:
+        if target.bot or is_core(target):
+            lines.append(f'{target.display_name}: kickas inte (bot eller Kärngruppen).')
+            log_action(message, 'kick', target, 'nekad')
+            continue
+        try:
+            await target.kick(reason=f'Kickad av {message.author} via Claudosaurus')
+            lines.append(f'{target.display_name}: kickad.')
+            log_action(message, 'kick', target, 'ok')
+        except discord.Forbidden:
+            lines.append(f'{target.display_name}: boten saknar behörighet att kicka.')
+            log_action(message, 'kick', target, 'saknar behörighet')
+    await message.reply('\n'.join(lines), mention_author=False,
+                        allowed_mentions=discord.AllowedMentions.none())
+
+
 @client.event
 async def on_ready():
     print(f'inloggad som {client.user}', flush=True)
@@ -50,6 +91,12 @@ async def on_message(message):
     if message.author.bot or message.channel.id not in ANSWER_CHANNELS:
         return
     text = message.content.strip()
+    if text.lower().startswith('kicka'):
+        if not is_core(message.author):
+            await message.reply('Bara Kärngruppen kan ge admin-kommandon.', mention_author=False)
+            return
+        await handle_kick(message)
+        return
     mentioned = client.user in message.mentions
     if not (mentioned or '?' in text) or 'github.com/' in text:
         return
@@ -72,5 +119,4 @@ async def on_message(message):
 
 
 if __name__ == '__main__':
-    import os
     client.run(os.environ['DISCORD_TOKEN'])
